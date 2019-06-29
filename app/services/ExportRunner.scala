@@ -5,28 +5,22 @@ import java.nio.file.{Path, Paths}
 
 import com.github.tototoshi.csv.CSVWriter
 import javax.inject._
-import play.api.Logger
+import play.api.{Configuration, Logger}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Try}
 
 @Singleton
-class ExportRunner @Inject()(exporter: Exporter, csvExporter: CSVExporter)(implicit ec: ExecutionContext) {
+class ExportRunner @Inject()(exporter: Exporter, csvExporter: CSVExporter, configuration: Configuration)(
+    implicit ec: ExecutionContext) {
 
   private val logger =
     Logger(this.getClass)
 
-  private val owner = "hibobio"
-  private val ownersWithRepos =
-    List(
-      OwnerWithRepo(owner, "hibob"),
-      OwnerWithRepo(owner, "social"),
-      OwnerWithRepo(owner, "surveys"),
-      OwnerWithRepo(owner, "docs"),
-      OwnerWithRepo(owner, "hibob-web"),
-    )
-
-  private val fileName = Paths.get("target/pull_requests_export.csv")
+  private val owner           = configuration.get[String]("github.owner")
+  private val reposList       = configuration.get[String]("github.repos")
+  private val ownersWithRepos = reposList.split(",").map(OwnerWithRepo(owner, _)).toList
+  private val fileName        = Paths.get(configuration.get[String]("target.export.file.path"))
 
   private def export() =
     Future
