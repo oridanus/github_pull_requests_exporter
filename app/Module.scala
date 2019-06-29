@@ -3,7 +3,7 @@ import services.ExportRunner
 
 class Module extends AbstractModule {
 
-  override def configure() = {
+  override def configure(): Unit = {
     bind(classOf[ExportRunner]).asEagerSingleton()
   }
 

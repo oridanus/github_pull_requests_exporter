@@ -1,6 +1,7 @@
 package services
 
 import java.io.{BufferedWriter, FileWriter}
+import java.nio.file.{Path, Paths}
 
 import com.github.tototoshi.csv.CSVWriter
 import javax.inject._
@@ -12,60 +13,74 @@ import scala.util.{Failure, Try}
 @Singleton
 class ExportRunner @Inject()(exporter: Exporter, csvExporter: CSVExporter)(implicit ec: ExecutionContext) {
 
-  // This code is called when the application starts.
+  private val logger =
+    Logger(this.getClass)
 
-  private val logger = Logger(this.getClass)
+  private val owner = "hibobio"
+  private val ownersWithRepos =
+    List(
+      OwnerWithRepo(owner, "hibob"),
+      OwnerWithRepo(owner, "social"),
+      OwnerWithRepo(owner, "surveys"),
+      OwnerWithRepo(owner, "docs"),
+      OwnerWithRepo(owner, "hibob-web"),
+    )
 
-  for {
-    _ <- export("hibob")
-    _ <-   export("social")
-    _ <-   export("surveys")
-    _ <-   export("docs")
-    _ = logger.info("finished")
-  } yield true
+  private val fileName = Paths.get("target/pull_requests_export.csv")
 
-  def export(repo: String): Future[Boolean]= {
+  private def export() =
+    Future
+      .foldLeft[List[PullRequestWithReviewers], List[PullRequestWithReviewers]](
+        ownersWithRepos.map(exporter.getAll)
+      )(Nil)(_ ++ _)
+      .map(createCSV)
 
-    def createCSV(prs: List[PullRequestWithReviewers]) =
-      csvExporter.writeCsvFile(s"$repo.csv",
-      List("Title", "User", "Url", "Creation Date", "Merged Date", "Requested reviewer", "Approved"),
+  private def createCSV(prs: List[PullRequestWithReviewers]) =
+    csvExporter.writeCsvFile(
+      fileName,
+      List("Repo", "Title", "User", "Url", "Creation Date", "Merged Date", "Requested reviewer", "Approved"),
       prs.map(pr => {
         val approved = pr.reviewres.exists(_.state == "APPROVED").toString
-        val firstReviewer = pr.pr.requested_reviewers.headOption.map(_.login).orElse(pr.reviewres.headOption.map(_.user.login)).getOrElse("")
-        List(pr.pr.title, pr.pr.user.login, pr.pr.html_url, pr.pr.created_at, pr.pr.merged_at.getOrElse(""), firstReviewer, approved)
-      }))
+        val firstReviewer = pr.pr.requested_reviewers.headOption
+          .map(_.login)
+          .orElse(pr.reviewres.headOption.map(_.user.login))
+          .getOrElse("")
+        List(pr.pr.repoName,
+             pr.pr.title,
+             pr.pr.user.login,
+             pr.pr.htmlUrl,
+             pr.pr.createdAt,
+             pr.pr.merged_at.getOrElse(""),
+             firstReviewer,
+             approved)
+      })
+    )
 
-    exporter.getAll(repo).map(_.filter(_.pr.merged_at.nonEmpty)).map(createCSV).map(_ => true)
-  }
+  // This code is called when the application starts.
+  export().map(_ => {
+    logger.info("Finished exporting")
+    println("Finished exporting")
+  })
 
 }
 
 @Singleton
-class CSVExporter {
+class CSVExporter() {
 
-  def writeCsvFile(
-                    fileName: String,
-                    header: List[String],
-                    rows: List[List[String]]
-                  ): Try[Unit] =
-    Try(new CSVWriter(new BufferedWriter(new FileWriter(fileName)))).flatMap((csvWriter: CSVWriter) =>
-      Try{
+  def writeCsvFile(filePath: Path, header: List[String], rows: List[List[String]]): Try[Unit] =
+    Try(new CSVWriter(new BufferedWriter(new FileWriter(filePath.toFile)))).flatMap((csvWriter: CSVWriter) =>
+      Try {
         csvWriter.writeAll(
           header +: rows
         )
         csvWriter.close()
       } match {
         case f @ Failure(_) =>
-          // Always return the original failure.  In production code we might
-          // define a new exception which wraps both exceptions in the case
-          // they both fail, but that is omitted here.
-          Try(csvWriter.close()).recoverWith{
+          Try(csvWriter.close()).recoverWith {
             case _ => f
           }
         case success =>
           success
-      }
-    )
-
+    })
 
 }
