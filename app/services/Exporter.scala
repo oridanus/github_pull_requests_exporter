@@ -32,7 +32,7 @@ class Exporter @Inject()(wsClient: WSClient, configuration: Configuration)(impli
         Json
           .parse(response.body)
           .validate[List[PullRequest]]
-          .fold(errors => error(errors), r => r)
+          .fold(errors => error(errors, response.body), r => r)
       }
 
   private def getReviewers(ownerWithRepo: OwnerWithRepo, pullNumber: Long) =
@@ -44,10 +44,10 @@ class Exporter @Inject()(wsClient: WSClient, configuration: Configuration)(impli
         Json
           .parse(response.body)
           .validate[List[PullRequestReviewer]]
-          .fold(errors => error(errors), r => r)
+          .fold(errors => error(errors, response.body), r => r)
       }
 
-  private def error(errors: Seq[(JsPath, collection.Seq[JsonValidationError])]) = {
+  private def error(errors: Seq[(JsPath, collection.Seq[JsonValidationError])], responseBody: String) = {
     logger.error(errors.toString)
     throw new RuntimeException(errors.toString)
   }
@@ -59,7 +59,9 @@ class Exporter @Inject()(wsClient: WSClient, configuration: Configuration)(impli
 
 case class OwnerWithRepo(owner: String, repo: String)
 
-case class PullRequestWithReviewers(pr: PullRequest, reviewres: List[PullRequestReviewer])
+case class PullRequestWithReviewers(pr: PullRequest, reviewres: List[PullRequestReviewer]) {
+  val approved: Boolean = reviewres.exists(_.state == "APPROVED")
+}
 
 case class Repository(name: String)
 
